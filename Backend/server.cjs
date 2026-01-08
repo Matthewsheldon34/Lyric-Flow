@@ -13,8 +13,8 @@ const crypto = require("crypto");
 const { Server } = require("socket.io");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// ROUTES
-
+// FIXED: Update these imports to use correct paths
+// Since server.cjs is in Backend/, and these files are in root/routes/ and root/config/
 const subscriptionRouter = require("./routes/subscriptionEndpoint.cjs");
 const PLAN_FEATURES = require("./config/planFeatures.js");
 
@@ -74,6 +74,20 @@ const ContactMessageSchema = new mongoose.Schema({
 });
 const ContactMessage = mongoose.model("ContactMessage", ContactMessageSchema);
 
+// Project Schema
+const ProjectSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  theme: String,
+  idea: String,
+  style: { type: String, default: "Pop" },
+  mood: { type: String, default: "Happy" },
+  lyrics: [String],
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+const Project = mongoose.model("Project", ProjectSchema);
+
 // ----------------------- EXPRESS + SERVER -----------------------
 const app = express();
 const server = http.createServer(app);
@@ -109,7 +123,6 @@ const io = new Server(server, {
   }
 });
 
-
 // ----------------------- AUTH MIDDLEWARE -----------------------
 function authMiddleware(req,res,next){
   const header = req.headers.authorization;
@@ -119,133 +132,63 @@ function authMiddleware(req,res,next){
   try { req.user = jwt.verify(token,process.env.JWT_SECRET); next(); }
   catch { res.status(401).json({error:"Invalid or expired token"}); }
 }
-// ----------------------- PROJECT SCHEMA -----------------------
-const ProjectSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  theme: String,
-  idea: String,
-  style: { type: String, default: "Pop" },
-  mood: { type: String, default: "Happy" },
-  lyrics: [String],
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+
+// ======================= ROUTES =======================
+
+// ----------------------- ROOT & HEALTH ROUTES -----------------------
+app.get("/", (req, res) => {
+  res.json({
+    message: "🎵 Lyric Flow Backend API",
+    status: "running",
+    version: "1.0.0",
+    endpoints: {
+      auth: {
+        register: "POST /api/register",
+        verify: "POST /api/verify-otp",
+        login: "POST /api/login",
+        profile: "GET /api/user/profile",
+        google: "POST /api/oauth/google"
+      },
+      projects: {
+        list: "GET /api/projects",
+        create: "POST /api/project",
+        update: "PUT /api/project/:id",
+        delete: "DELETE /api/project/:id"
+      },
+      lyrics: "POST /api/generate-lyrics",
+      contact: "POST /api/contact",
+      dailyUsage: "GET /api/user/daily-usage",
+      paypal: "GET /api/paypal/*",
+      health: "GET /health",
+      adminReset: "DELETE /admin/reset-all-users"
+    },
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+  });
 });
 
-const Project = mongoose.model("Project", ProjectSchema);
-
-// Get all projects for user
-app.get("/api/projects", authMiddleware, async (req, res) => {
-  try {
-    const projects = await Project.find({ userId: req.user.id }).sort({ updatedAt: -1 });
-    res.json(projects);
-  } catch (err) {
-    console.error("Get projects error:", err);
-    res.status(500).json({ error: "Failed to fetch projects" });
-  }
-});
-// ----------------------- PROJECT ROUTES -----------------------
-
-// Get all projects for user
-app.get("/api/projects", authMiddleware, async (req, res) => {
-  try {
-    const projects = await Project.find({ userId: req.user.id }).sort({ updatedAt: -1 });
-    res.json(projects);
-  } catch (err) {
-    console.error("Get projects error:", err);
-    res.status(500).json({ error: "Failed to fetch projects" });
-  }
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+  });
 });
 
-// Create new project
-app.post("/api/project", authMiddleware, async (req, res) => {
-  try {
-    const { name } = req.body;
-    
-    if (!name) {
-      return res.status(400).json({ error: "Project name is required" });
-    }
-
-    const project = await Project.create({
-      name,
-      userId: req.user.id
-    });
-
-    res.json(project);
-  } catch (err) {
-    console.error("Create project error:", err);
-    res.status(500).json({ error: "Failed to create project" });
-  }
+// ----------------------- TEST ROUTE -----------------------
+app.get("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "✅ Backend is working!",
+    server: "Lyric Flow API",
+    port: process.env.PORT || 5000,
+    environment: process.env.NODE_ENV || "development"
+  });
 });
 
-// Update project (SAVE FUNCTIONALITY)
-app.put("/api/project/:id", authMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, theme, idea, style, mood, lyrics } = req.body;
-
-    const project = await Project.findOne({ _id: id, userId: req.user.id });
-    
-    if (!project) {
-      return res.status(404).json({ error: "Project not found" });
-    }
-
-    // Update project fields
-    if (name !== undefined) project.name = name;
-    if (theme !== undefined) project.theme = theme;
-    if (idea !== undefined) project.idea = idea;
-    if (style !== undefined) project.style = style;
-    if (mood !== undefined) project.mood = mood;
-    if (lyrics !== undefined) project.lyrics = lyrics;
-    
-    project.updatedAt = new Date();
-
-    await project.save();
-
-    res.json(project);
-  } catch (err) {
-    console.error("Update project error:", err);
-    res.status(500).json({ error: "Failed to update project" });
-  }
-});
-
-// Delete project
-app.delete("/api/project/:id", authMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const project = await Project.findOneAndDelete({ _id: id, userId: req.user.id });
-    
-    if (!project) {
-      return res.status(404).json({ error: "Project not found" });
-    }
-
-    res.json({ success: true, message: "Project deleted successfully" });
-  } catch (err) {
-    console.error("Delete project error:", err);
-    res.status(500).json({ error: "Failed to delete project" });
-  }
-});
-// ----------------------- GET CURRENT USER -----------------------
-app.get("/api/user", authMiddleware, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    res.json({
-      id: user._id,
-      email: user.email,
-      username: user.username,
-      profilePic: user.profilePic,
-      subscription: user.subscription,
-      isVerified: user.isVerified
-    });
-  } catch (err) {
-    console.error("Get user error:", err);
-    res.status(500).json({ error: "Failed to get user info" });
-  }
-});
-// ----------------------- SMTP SETUP WITH PROPER GMAIL AUTH -----------------------
+// ----------------------- SMTP SETUP -----------------------
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -254,7 +197,6 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Test SMTP connection on startup
 transporter.verify()
   .then(() => console.log("✅ SMTP connection verified - OTP emails will work!"))
   .catch(err => {
@@ -266,17 +208,7 @@ transporter.verify()
     console.log("4. Try: https://accounts.google.com/DisplayUnlockCaptcha");
   });
 
-
-  // ----------------------- HEALTH CHECK -----------------------
-app.get("/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
-  });
-});
-// ----------------------- OTP SYSTEM (REAL EMAIL) -----------------------
+// ----------------------- OTP EMAIL FUNCTION -----------------------
 async function sendOtpEmail(email, otp) {
   try {
     console.log(`📧 Sending OTP to: ${email}`);
@@ -319,21 +251,16 @@ async function sendOtpEmail(email, otp) {
 
     const result = await transporter.sendMail(mailOptions);
     console.log(`✅ OTP email sent successfully to: ${email}`);
-    console.log(`📫 Message ID: ${result.messageId}`);
     return true;
     
   } catch (error) {
     console.error("❌ Failed to send OTP email:", error.message);
-    
-    // Fallback to console if email fails
     console.log(`🎯 OTP FALLBACK for ${email}: ${otp}`);
-    console.log(`📝 Email system failed - using console fallback`);
-    
     throw new Error(`Failed to send OTP email: ${error.message}`);
   }
 }
 
-// ----------------------- RESET ALL USERS -----------------------
+// ----------------------- ADMIN ROUTES -----------------------
 app.delete("/admin/reset-all-users", async (req, res) => {
   try {
     const result = await User.deleteMany({});
@@ -349,7 +276,7 @@ app.delete("/admin/reset-all-users", async (req, res) => {
   }
 });
 
-// ----------------------- REGISTER WITH OTP VERIFICATION -----------------------
+// ----------------------- AUTH ROUTES -----------------------
 app.post("/api/register", async (req, res) => {
   try {
     const { email, username, password } = req.body;
@@ -364,7 +291,6 @@ app.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "Password must be at least 6 characters" });
     }
 
-    // Check if username already exists (case insensitive)
     const existingUsername = await User.findOne({ 
       username: new RegExp(`^${username}$`, 'i') 
     });
@@ -372,7 +298,6 @@ app.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "Username already taken" });
     }
 
-    // Check if email already exists
     const existingEmail = await User.findOne({ email: email.toLowerCase() });
     if (existingEmail) {
       return res.status(400).json({ error: "Email already registered" });
@@ -380,22 +305,20 @@ app.post("/api/register", async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 12);
     const otp = crypto.randomInt(100000, 999999).toString();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     
-    // Create user (NOT verified - requires OTP)
     const user = await User.create({
       email: email.toLowerCase(),
       username: username.toLowerCase(),
       password: hashed,
       subscription: { plan: "free" },
-      isVerified: false, // Require OTP verification
+      isVerified: false,
       otp,
       otpExpires
     });
 
     console.log(`👤 New user created: ${email} (pending verification)`);
 
-    // Send OTP via email
     await sendOtpEmail(email, otp);
 
     res.json({ 
@@ -421,7 +344,6 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// ----------------------- VERIFY OTP (STRICT) -----------------------
 app.post("/api/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -448,13 +370,11 @@ app.post("/api/verify-otp", async (req, res) => {
       return res.status(400).json({ error: "OTP expired. Please request a new one." });
     }
 
-    // ACTUAL OTP VALIDATION
     if (user.otp !== otp) {
       console.log(`❌ Invalid OTP attempt for ${email}: ${otp} (expected: ${user.otp})`);
       return res.status(400).json({ error: "Invalid OTP code" });
     }
 
-    // OTP is valid - verify the user
     user.isVerified = true;
     user.otp = null;
     user.otpExpires = null;
@@ -462,7 +382,6 @@ app.post("/api/verify-otp", async (req, res) => {
 
     console.log(`✅ User verified: ${email}`);
 
-    // Generate JWT token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.json({
@@ -485,7 +404,6 @@ app.post("/api/verify-otp", async (req, res) => {
   }
 });
 
-// ----------------------- RESEND OTP -----------------------
 app.post("/api/resend-otp", async (req, res) => {
   try {
     const { email } = req.body;
@@ -504,7 +422,6 @@ app.post("/api/resend-otp", async (req, res) => {
       return res.status(400).json({ error: "Email already verified" });
     }
 
-    // Generate new OTP
     const otp = crypto.randomInt(100000, 999999).toString();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -512,7 +429,6 @@ app.post("/api/resend-otp", async (req, res) => {
     user.otpExpires = otpExpires;
     await user.save();
 
-    // Send new OTP
     await sendOtpEmail(email, otp);
 
     res.json({
@@ -526,7 +442,6 @@ app.post("/api/resend-otp", async (req, res) => {
   }
 });
 
-// ----------------------- LOGIN (REQUIRES VERIFICATION) -----------------------
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -541,7 +456,6 @@ app.post("/api/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // Check if user is verified - REQUIRED
     if (!user.isVerified) {
       console.log(`❌ Login blocked: ${email} not verified`);
       return res.status(401).json({ 
@@ -550,14 +464,12 @@ app.post("/api/login", async (req, res) => {
       });
     }
 
-    // Check password
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
       console.log(`❌ Invalid password for: ${email}`);
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // Generate token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
     
     console.log(`✅ User logged in: ${email}`);
@@ -581,6 +493,126 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+// ----------------------- PROJECT ROUTES -----------------------
+app.get("/api/projects", authMiddleware, async (req, res) => {
+  try {
+    const projects = await Project.find({ userId: req.user.id }).sort({ updatedAt: -1 });
+    res.json(projects);
+  } catch (err) {
+    console.error("Get projects error:", err);
+    res.status(500).json({ error: "Failed to fetch projects" });
+  }
+});
+
+app.post("/api/project", authMiddleware, async (req, res) => {
+  try {
+    const { name } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: "Project name is required" });
+    }
+
+    const project = await Project.create({
+      name,
+      userId: req.user.id
+    });
+
+    res.json(project);
+  } catch (err) {
+    console.error("Create project error:", err);
+    res.status(500).json({ error: "Failed to create project" });
+  }
+});
+
+app.put("/api/project/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, theme, idea, style, mood, lyrics } = req.body;
+
+    const project = await Project.findOne({ _id: id, userId: req.user.id });
+    
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    if (name !== undefined) project.name = name;
+    if (theme !== undefined) project.theme = theme;
+    if (idea !== undefined) project.idea = idea;
+    if (style !== undefined) project.style = style;
+    if (mood !== undefined) project.mood = mood;
+    if (lyrics !== undefined) project.lyrics = lyrics;
+    
+    project.updatedAt = new Date();
+
+    await project.save();
+
+    res.json(project);
+  } catch (err) {
+    console.error("Update project error:", err);
+    res.status(500).json({ error: "Failed to update project" });
+  }
+});
+
+app.delete("/api/project/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const project = await Project.findOneAndDelete({ _id: id, userId: req.user.id });
+    
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    res.json({ success: true, message: "Project deleted successfully" });
+  } catch (err) {
+    console.error("Delete project error:", err);
+    res.status(500).json({ error: "Failed to delete project" });
+  }
+});
+
+// ----------------------- USER ROUTES -----------------------
+app.get("/api/user", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json({
+      id: user._id,
+      email: user.email,
+      username: user.username,
+      profilePic: user.profilePic,
+      subscription: user.subscription,
+      isVerified: user.isVerified
+    });
+  } catch (err) {
+    console.error("Get user error:", err);
+    res.status(500).json({ error: "Failed to get user info" });
+  }
+});
+
+app.get("/api/user/profile", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        profilePic: user.profilePic,
+        plan: user.subscription.plan,
+        isVerified: user.isVerified,
+        dailyUsage: user.dailyUsage
+      }
+    });
+  } catch (err) {
+    console.error("Profile error:", err);
+    res.status(500).json({ error: "Failed to get profile" });
+  }
+});
+
 // ----------------------- CONTACT FORM -----------------------
 app.post("/api/contact", async (req, res) => {
   try {
@@ -590,10 +622,8 @@ app.post("/api/contact", async (req, res) => {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    // Save message to DB
     const contact = await ContactMessage.create({ username, email, message });
 
-    // Send email notification to admin
     await transporter.sendMail({
       from: `"Lyric Flow Contact" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
@@ -625,7 +655,7 @@ app.post("/api/contact", async (req, res) => {
   }
 });
 
-// ----------------------- DAILY USAGE LIMIT -----------------------
+// ----------------------- DAILY USAGE LIMIT MIDDLEWARE -----------------------
 async function checkLyricLimit(req, res, next) {
   try {
     const user = await User.findById(req.user.id);
@@ -667,100 +697,7 @@ async function checkLyricLimit(req, res, next) {
     res.status(500).json({ error: "Internal server error" });
   }
 }
-// ----------------------- GEMINI LYRICS GENERATION -----------------------
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-app.post("/api/generate-lyrics", authMiddleware, checkLyricLimit, async (req, res) => {
-  try {
-    const { theme, style, mood, promptType, startingLine } = req.body;
-
-    if (!theme) {
-      return res.status(400).json({ error: "Theme is required" });
-    }
-
-    console.log(`🎵 Generating lyrics for theme: ${theme}`);
-    console.log(`🤖 Using model: ${process.env.GEMINI_MODEL}`);
-
-    const prompt = `
-You are an expert AI songwriter and lyricist. Generate original, creative, and emotionally engaging lyrics.
-
-THEME: ${theme}
-STYLE: ${style || "contemporary"}
-MOOD: ${mood || "inspirational"}
-PROMPT TYPE: ${promptType || "full song"}
-STARTING LINE: ${startingLine || "None - create original lyrics"}
-
-INSTRUCTIONS:
-- Create complete, structured lyrics with verses, chorus, and bridge
-- Make the lyrics emotionally resonant and memorable
-- Use appropriate rhyme schemes and poetic devices
-- Ensure the lyrics match the specified theme, style, and mood
-- Make it original and creative, not generic
-
-FORMAT:
-Please format the lyrics with clear section labels like [Verse 1], [Chorus], [Verse 2], etc.
-`;
-
-    // Available models with correct full paths
-    const availableModels = [
-      "models/gemini-2.5-flash",    // Your Gemini 2.5 Flash
-      "gemini-1.5-flash",           // Fallback option
-      "gemini-1.5-pro",             // Another fallback
-    ];
-
-    let lastError = null;
-
-    // Try each model until one works
-    for (const modelName of availableModels) {
-      try {
-        console.log(`🤖 Attempting to use model: ${modelName}`);
-        
-        const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(prompt);
-        const text = result.response.text() || "";
-
-        if (!text) {
-          throw new Error("No response from AI model");
-        }
-
-        console.log(`✅ Lyrics generated successfully with ${modelName}`);
-        console.log(`📝 Response length: ${text.length} characters`);
-
-        // Format the lyrics
-        const formatted = text
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.length > 0)
-          .map(line => line.replace(/^\*\*|\*\*$/g, '').replace(/^###\s*/, ''));
-
-        return res.json({
-          success: true,
-          lyrics: formatted,
-          dailyCount: req.dailyUsage.count,
-          dailyLimit: req.dailyUsage.dailyLimit,
-          modelUsed: modelName
-        });
-
-      } catch (modelError) {
-        console.log(`❌ Model ${modelName} failed: ${modelError.message}`);
-        lastError = modelError;
-        continue; // Try next model
-      }
-    }
-
-    // If all models failed
-    console.error("❌ All Gemini models failed:", lastError);
-    throw new Error("AI service temporarily unavailable. Please try again later.");
-
-  } catch (err) {
-    console.error("Lyrics Generation Error:", err.message);
-    
-    res.status(500).json({ 
-      error: "Failed to generate lyrics. Please try again later.",
-      details: err.message
-    });
-  }
-});
 // ----------------------- DAILY USAGE ENDPOINT -----------------------
 app.get("/api/user/daily-usage", authMiddleware, async (req, res) => {
   try {
@@ -788,6 +725,96 @@ app.get("/api/user/daily-usage", authMiddleware, async (req, res) => {
   }
 });
 
+// ----------------------- GEMINI LYRICS GENERATION -----------------------
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+app.post("/api/generate-lyrics", authMiddleware, checkLyricLimit, async (req, res) => {
+  try {
+    const { theme, style, mood, promptType, startingLine } = req.body;
+
+    if (!theme) {
+      return res.status(400).json({ error: "Theme is required" });
+    }
+
+    console.log(`🎵 Generating lyrics for theme: ${theme}`);
+
+    const prompt = `
+You are an expert AI songwriter and lyricist. Generate original, creative, and emotionally engaging lyrics.
+
+THEME: ${theme}
+STYLE: ${style || "contemporary"}
+MOOD: ${mood || "inspirational"}
+PROMPT TYPE: ${promptType || "full song"}
+STARTING LINE: ${startingLine || "None - create original lyrics"}
+
+INSTRUCTIONS:
+- Create complete, structured lyrics with verses, chorus, and bridge
+- Make the lyrics emotionally resonant and memorable
+- Use appropriate rhyme schemes and poetic devices
+- Ensure the lyrics match the specified theme, style, and mood
+- Make it original and creative, not generic
+
+FORMAT:
+Please format the lyrics with clear section labels like [Verse 1], [Chorus], [Verse 2], etc.
+`;
+
+    const availableModels = [
+      "models/gemini-2.5-flash",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro",
+    ];
+
+    let lastError = null;
+
+    for (const modelName of availableModels) {
+      try {
+        console.log(`🤖 Attempting to use model: ${modelName}`);
+        
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text() || "";
+
+        if (!text) {
+          throw new Error("No response from AI model");
+        }
+
+        console.log(`✅ Lyrics generated successfully with ${modelName}`);
+        console.log(`📝 Response length: ${text.length} characters`);
+
+        const formatted = text
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .map(line => line.replace(/^\*\*|\*\*$/g, '').replace(/^###\s*/, ''));
+
+        return res.json({
+          success: true,
+          lyrics: formatted,
+          dailyCount: req.dailyUsage.count,
+          dailyLimit: req.dailyUsage.dailyLimit,
+          modelUsed: modelName
+        });
+
+      } catch (modelError) {
+        console.log(`❌ Model ${modelName} failed: ${modelError.message}`);
+        lastError = modelError;
+        continue;
+      }
+    }
+
+    console.error("❌ All Gemini models failed:", lastError);
+    throw new Error("AI service temporarily unavailable. Please try again later.");
+
+  } catch (err) {
+    console.error("Lyrics Generation Error:", err.message);
+    
+    res.status(500).json({ 
+      error: "Failed to generate lyrics. Please try again later.",
+      details: err.message
+    });
+  }
+});
+
 // ----------------------- GOOGLE OAUTH -----------------------
 app.post("/api/oauth/google", async (req, res) => {
   try {
@@ -806,7 +833,7 @@ app.post("/api/oauth/google", async (req, res) => {
         username: name.replace(/\s+/g, "").toLowerCase(),
         profilePic: picture,
         subscription: { plan: "free" },
-        isVerified: true // Google users auto-verified
+        isVerified: true
       });
     }
 
@@ -831,31 +858,7 @@ app.post("/api/oauth/google", async (req, res) => {
   }
 });
 
-// ----------------------- USER PROFILE -----------------------
-app.get("/api/user/profile", authMiddleware, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    res.json({
-      success: true,
-      user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        profilePic: user.profilePic,
-        plan: user.subscription.plan,
-        isVerified: user.isVerified,
-        dailyUsage: user.dailyUsage
-      }
-    });
-  } catch (err) {
-    console.error("Profile error:", err);
-    res.status(500).json({ error: "Failed to get profile" });
-  }
-});
-
-// ----------------------- PAYPAL -----------------------
+// ----------------------- PAYPAL ROUTES -----------------------
 app.use("/api/paypal", authMiddleware, subscriptionRouter);
 
 // ----------------------- SOCKET.IO -----------------------
@@ -868,11 +871,18 @@ io.on("connection", socket => {
 // ----------------------- START SERVER -----------------------
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
+  // Always show the Render URL (we know it's deployed there)
+  const renderUrl = "https://lyric-flow.onrender.com";
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  const baseUrl = isProduction ? renderUrl : `http://localhost:${PORT}`;
+  
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔧 Registration: Requires email OTP verification`);
-  console.log(`🔧 OTP: Sent via Gmail to user's email`);
-  console.log(`🔧 Login: Requires email verification first`);
-  console.log(`🔧 Lyrics: Daily limits enforced`);
+  console.log(`🌐 Environment: ${isProduction ? 'Production (Render)' : 'Development'}`);
+  console.log(`🔗 URL: ${baseUrl}`);
+  console.log(`🩺 ${baseUrl}/health`);
+  console.log(`🧪 ${baseUrl}/test`);
+  console.log(`🔧 OTP Verification: Enabled`);
 });
 
 module.exports = { app, server, User, authMiddleware };
