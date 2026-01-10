@@ -24,8 +24,8 @@ async function createSubscription(req, res) {
         plan_id: planId,
         application_context: {
           brand_name: "Lyric Flow",
-          return_url: `${process.env.CLIENT_ORIGIN}/subscription-success`,
-          cancel_url: `${process.env.CLIENT_ORIGIN}/subscription-cancel`,
+          return_url: `${process.env.BACKEND_URL}/subscription-success`,
+          cancel_url: `${process.env.BACKEND_URL}/subscription-cancel`,
           user_action: "SUBSCRIBE_NOW",
         },
       },
