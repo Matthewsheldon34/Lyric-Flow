@@ -93,7 +93,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "https://lyric-flow.onrender.co
     try {
       setLoadingPlan(planType);
 
-      const res = await fetch(`${API_BASE}/api/paypal/create-subscription`, {
+      const res = await fetch(`${API_BASE}/paypal/create-subscription`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
