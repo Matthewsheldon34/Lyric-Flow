@@ -134,7 +134,7 @@ useEffect(() => {
       const promptText = idea ? `${theme} - ${idea}` : theme;
 
       const res = await axios.post(
-        `${API_BASE}/generate-lyrics`,
+        `${API_BASE}/api/generate-lyrics`,
         { theme: promptText, style, mood, startingLine },
         { headers: { Authorization: `Bearer ${token}` } }
       );

@@ -29,7 +29,7 @@ export default function ProjectsSidebar({
   return (
     <div className="w-80 h-screen border-r border-white/20">
       {/* Background overlay matching App.jsx */}
-      <div className="fixed inset-0 bg-gradient-to-r from-blue-500 via-purple-600 to-pink-500 blur-3xl opacity-70 -z-10 w-80" />
+      <div className="fixed inset-0 bg-linear-to-r from-blue-500 via-purple-600 to-pink-500 blur-3xl opacity-70 -z-10 w-80" />
       
       {/* Sidebar content with glass morphism effect */}
       <Motion.div 

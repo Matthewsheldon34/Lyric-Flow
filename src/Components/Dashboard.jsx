@@ -11,12 +11,27 @@ export default function Dashboard({ token }) {
   const [showSubscription, setShowSubscription] = useState(false);
   const [currentPlan, setCurrentPlan] = useState("free");
   const [currentUser, setCurrentUser] = useState(null);
+  const [paymentMessage, setPaymentMessage] = useState("");
   const socketRef = useRef(null);
+
+  const API_URL = import.meta.env.VITE_API_URL || "https://lyric-flow.onrender.com";
+  const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "https://lyric-flow.onrender.com";
+
+  // Check URL params for payment status
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const payment = urlParams.get('payment');
+    if (payment === 'cancelled') {
+      setPaymentMessage("Payment was cancelled.");
+      // Clear the URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   // ---------------- Initialize socket once ----------------
   useEffect(() => {
   if (!socketRef.current) {
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || "https://lyric-flow.onrender.com";
+    const socketUrl = SOCKET_URL;
 
     socketRef.current = io(socketUrl, {
       transports: ["websocket", "polling"],
@@ -45,14 +60,14 @@ export default function Dashboard({ token }) {
     const fetchData = async () => {
       try {
         // Fetch projects
-        const resProjects = await axios.get("https://lyric-flow.onrender.com/api/projects", {
+        const resProjects = await axios.get(`${API_URL}/api/projects`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setProjects(resProjects.data || []);
         console.log("📋 Loaded projects:", resProjects.data);
 
         // Fetch user subscription info
-        const resUser = await axios.get("https://lyric-flow.onrender.com/api/user", {
+        const resUser = await axios.get(`${API_URL}/api/user`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setCurrentPlan(resUser.data.subscription?.plan || "free");
@@ -73,7 +88,7 @@ export default function Dashboard({ token }) {
 
     try {
       const res = await axios.post(
-        "https://lyric-flow.onrender.com/api/project",
+        `${API_URL}/api/project`,
         { name },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -101,7 +116,7 @@ export default function Dashboard({ token }) {
 
       // Update project in backend
       const res = await axios.put(
-        `https://lyric-flow.onrender.com/api/project/${projectId}`,
+        `${API_URL}/api/project/${projectId}`,
         {
           name: projectData.name,
           theme: projectData.theme,
@@ -145,7 +160,7 @@ export default function Dashboard({ token }) {
     if (!confirm("Are you sure you want to delete this project?")) return;
     
     try {
-      await axios.delete(`https://lyric-flow.onrender.com/api/project/${projectId}`, {
+      await axios.delete(`${API_URL}/api/project/${projectId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setProjects(prev => prev.filter(p => p._id !== projectId));
@@ -160,7 +175,7 @@ export default function Dashboard({ token }) {
   const handleUpgrade = async (plan) => {
     try {
       const res = await axios.post(
-        "https://lyric-flow.onrender.com/api/upgrade",
+        `${API_URL}/api/upgrade`,
         { plan },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -196,6 +211,13 @@ export default function Dashboard({ token }) {
           Upgrade Plan
         </button>
       </div>
+
+      {/* Payment Message */}
+      {paymentMessage && (
+        <div className="mb-4 p-4 bg-yellow-500 text-black rounded-lg">
+          {paymentMessage}
+        </div>
+      )}
 
       {/* --- Create Project --- */}
       <div className="flex mb-6 gap-2">

@@ -95,7 +95,7 @@ const handleGoogleLogin = async (credentialResponse) => {
   setSuccess("");
 
   try {
-    const res = await axios.post(`${API_BASE}/oauth/google`, {
+    const res = await axios.post(`${API_BASE}/api/oauth/google`, {
       idToken: credentialResponse.credential,
     });
 

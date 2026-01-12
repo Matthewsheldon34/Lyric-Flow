@@ -2,7 +2,7 @@
 import { io } from "socket.io-client";
 
 // ---------------- Initialize Socket.IO ----------------
-const socket = io("https://lyric-flow.onrender.com", {
+const socket = io("https://lyric-flow.onrender.com/api", {
   transports: ["websocket", "polling"],
   reconnection: true,
 });
