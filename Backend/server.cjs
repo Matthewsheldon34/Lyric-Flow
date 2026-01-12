@@ -492,7 +492,213 @@ app.post("/api/login", async (req, res) => {
     res.status(500).json({ error: "Login failed" }); 
   }
 });
+// ----------------------- FORGOT PASSWORD ROUTES -----------------------
+app.post("/api/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
 
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      // For security, don't reveal if email exists or not
+      console.log(`🔐 Password reset requested for non-existent email: ${email}`);
+      return res.json({ 
+        success: true,
+        message: "If an account exists with this email, a reset code will be sent."
+      });
+    }
+
+    // Generate reset OTP (6 digits)
+    const resetOtp = crypto.randomInt(100000, 999999).toString();
+    const resetOtpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    
+    // Store OTP in user document
+    user.otp = resetOtp;
+    user.otpExpires = resetOtpExpires;
+    await user.save();
+
+    console.log(`🔑 Password reset OTP for ${email}: ${resetOtp}`);
+
+    // Send reset email
+    try {
+      await transporter.sendMail({
+        from: `"Lyric Flow" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: "Password Reset Request - Lyric Flow",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; background: linear-gradient(135deg, #7C3AED, #4F46E5); padding: 30px; border-radius: 10px; color: white;">
+              <h1 style="margin: 0; font-size: 28px;">🎵 Lyric Flow</h1>
+              <p style="font-size: 18px; opacity: 0.9;">Your AI Songwriting Partner</p>
+            </div>
+            
+            <div style="background: #f8fafc; padding: 30px; border-radius: 8px; margin: 20px 0; text-align: center;">
+              <h2 style="color: #1e293b; margin-bottom: 10px;">Reset Your Password</h2>
+              <p style="color: #64748b; font-size: 16px;">Use this verification code to reset your password:</p>
+              
+              <div style="background: white; padding: 25px; border-radius: 12px; border: 2px dashed #7C3AED; margin: 25px 0;">
+                <div style="font-size: 42px; font-weight: bold; letter-spacing: 12px; color: #7C3AED; text-align: center;">
+                  ${resetOtp}
+                </div>
+              </div>
+              
+              <p style="color: #ef4444; font-size: 14px; font-weight: bold;">
+                ⚠️ This code will expire in 15 minutes
+              </p>
+              
+              <p style="color: #64748b; font-size: 14px;">
+                If you didn't request a password reset, please ignore this email.
+                Your account is safe and no changes have been made.
+              </p>
+            </div>
+            
+            <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center;">
+              <p style="color: #64748b; font-size: 12px;">
+                For security reasons, do not share this code with anyone.<br>
+                This is an automated message, please do not reply.
+              </p>
+            </div>
+          </div>
+        `
+      });
+      
+      console.log(`✅ Password reset email sent to: ${email}`);
+      
+      res.json({ 
+        success: true,
+        message: "Password reset instructions sent to your email.",
+        email: email // Send back the email for next step
+      });
+      
+    } catch (emailError) {
+      console.error("❌ Failed to send reset email:", emailError.message);
+      
+      // Still return success but log the OTP for debugging
+      console.log(`🔧 EMAIL FALLBACK - Reset OTP for ${email}: ${resetOtp}`);
+      
+      res.json({ 
+        success: true,
+        message: "Reset code generated. Check console for OTP (email service issue).",
+        otp: process.env.NODE_ENV === 'development' ? resetOtp : undefined,
+        email: email
+      });
+    }
+
+  } catch (err) { 
+    console.error("Forgot password error:", err); 
+    res.status(500).json({ error: "Failed to process password reset request" }); 
+  }
+});
+
+app.post("/api/verify-reset-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    
+    if (!email || !otp) {
+      return res.status(400).json({ error: "Email and OTP are required" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+
+    if (!user.otp || !user.otpExpires) {
+      return res.status(400).json({ error: "No reset request found. Please request a new code." });
+    }
+
+    if (new Date() > user.otpExpires) {
+      return res.status(400).json({ error: "Reset code expired. Please request a new one." });
+    }
+
+    if (user.otp !== otp) {
+      console.log(`❌ Invalid reset OTP attempt for ${email}: ${otp} (expected: ${user.otp})`);
+      return res.status(400).json({ error: "Invalid reset code" });
+    }
+
+    console.log(`✅ Reset OTP verified for: ${email}`);
+
+    res.json({
+      success: true,
+      message: "Reset code verified successfully. You can now set a new password.",
+      email: email,
+      otp: otp // Send back OTP for the next step
+    });
+
+  } catch (err) { 
+    console.error("Verify reset OTP error:", err); 
+    res.status(500).json({ error: "Failed to verify reset code" }); 
+  }
+});
+
+app.post("/api/reset-password", async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+
+    if (!user.otp || !user.otpExpires) {
+      return res.status(400).json({ error: "No reset request found. Please start over." });
+    }
+
+    if (new Date() > user.otpExpires) {
+      return res.status(400).json({ error: "Reset session expired. Please request a new code." });
+    }
+
+    if (user.otp !== otp) {
+      return res.status(400).json({ error: "Invalid reset code" });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    
+    // Update password and clear OTP fields
+    user.password = hashedPassword;
+    user.otp = null;
+    user.otpExpires = null;
+    await user.save();
+
+    console.log(`✅ Password reset successful for: ${email}`);
+
+    // Generate login token for automatic login
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+    res.json({
+      success: true,
+      message: "Password reset successful! You are now logged in.",
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        profilePic: user.profilePic,
+        plan: user.subscription.plan,
+        isVerified: true
+      }
+    });
+
+  } catch (err) { 
+    console.error("Reset password error:", err); 
+    res.status(500).json({ error: "Failed to reset password" }); 
+  }
+});
 // ----------------------- PROJECT ROUTES -----------------------
 app.get("/api/projects", authMiddleware, async (req, res) => {
   try {
