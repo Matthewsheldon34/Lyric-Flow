@@ -1078,7 +1078,7 @@ io.on("connection", socket => {
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   // Always show the Render URL (we know it's deployed there)
-  const renderUrl = "https://lyricflow-biimi.ondigitalocean.app";
+  const renderUrl = "https://lyricflow-h9q47.ondigitalocean.app";
   const isProduction = process.env.NODE_ENV === 'production';
   
   const baseUrl = isProduction ? renderUrl : `http://localhost:${PORT}`;
